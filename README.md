@@ -9,7 +9,8 @@ Desarrollar un sistema concurrente de predicción de riesgo de depresión pospar
 ## 👥 Integrantes del Proyecto
 
 *Mireya Nicole Sihuincha Schermuly*
-*Ma Ximena Chavarria Barrios*
+
+*Maria Ximena Chavarria Barrios*
 
 ---
 
