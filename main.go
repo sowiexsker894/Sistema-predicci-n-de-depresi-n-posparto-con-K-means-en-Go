@@ -276,9 +276,32 @@ func KMeansSequential(dataset []Point, seed int64) KMeansResult {
 // ==========================================
 // 2. K-MEANS CONCURRENTE (WORKER POOL)
 // ==========================================
+
+// Cantidad de puntos de cada trabajo. Los bloques pequeños permiten que un núcleo
+// rápido que termina antes tome más trabajo, en vez de esperar a los núcleos lentos.
+// Es una variable (y no una constante) para que los tests puedan probar otros tamaños.
+var ChunkSize = 10000
+
+// Trabajo que el maestro envía a la cola: un rango del dataset y los centroides de la
+// iteración actual (los trabajadores solo los leen, nunca los modifican)
+type Job struct {
+	Start     int
+	End       int
+	Centroids []Point
+}
+
 type PartialResult struct {
 	Sums   []Point
 	Counts []int
+}
+
+// Trabajador permanente: toma trabajos de la cola hasta que el maestro la cierra
+func worker(dataset []Point, jobs <-chan Job, results chan<- PartialResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for job := range jobs {
+		sums, counts := assignAndSum(dataset[job.Start:job.End], job.Centroids)
+		results <- PartialResult{Sums: sums, Counts: counts}
+	}
 }
 
 func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult {
@@ -287,44 +310,40 @@ func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult 
 	centroids := initialCentroids(dataset, seed)
 
 	n := len(dataset)
-	chunkSize := (n + numWorkers - 1) / numWorkers
+	numJobs := (n + ChunkSize - 1) / ChunkSize
+
+	// Los canales tienen espacio para todos los trabajos de una iteración, así el
+	// maestro puede repartirlos todos sin quedarse bloqueado
+	jobs := make(chan Job, numJobs)
+	results := make(chan PartialResult, numJobs)
+
+	// Los trabajadores se crean una sola vez y sirven para todas las iteraciones
+	var wg sync.WaitGroup
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go worker(dataset, jobs, results, &wg)
+	}
 
 	for iter := 0; iter < MaxIters; iter++ {
-		resultsChan := make(chan PartialResult, numWorkers)
-		var wg sync.WaitGroup
-
-		// Cada trabajador procesa su parte del dataset con los centroides actuales
-		for w := 0; w < numWorkers; w++ {
-			startIdx := w * chunkSize
-			endIdx := startIdx + chunkSize
-			if startIdx >= n {
-				break
-			}
+		// 1. Repartir: un trabajo por cada bloque de ChunkSize puntos
+		for j := 0; j < numJobs; j++ {
+			startIdx := j * ChunkSize
+			endIdx := startIdx + ChunkSize
 			if endIdx > n {
 				endIdx = n
 			}
-
-			wg.Add(1)
-			go func(subDataset []Point, currentCentroids []Point) {
-				defer wg.Done()
-				sums, counts := assignAndSum(subDataset, currentCentroids)
-				resultsChan <- PartialResult{Sums: sums, Counts: counts}
-			}(dataset[startIdx:endIdx], centroids)
+			jobs <- Job{Start: startIdx, End: endIdx, Centroids: centroids}
 		}
 
-		go func() {
-			wg.Wait()
-			close(resultsChan)
-		}()
-
-		// Reducción: juntar los resultados parciales de todos los trabajadores
+		// 2. Reducción: esperar un resultado por cada trabajo y juntarlos
 		globalSums := make([]Point, K)
 		for c := 0; c < K; c++ {
 			globalSums[c] = make(Point, Dimensions)
 		}
 		globalCounts := make([]int, K)
 
-		for res := range resultsChan {
+		for j := 0; j < numJobs; j++ {
+			res := <-results
 			for c := 0; c < K; c++ {
 				globalCounts[c] += res.Counts[c]
 				for d := 0; d < Dimensions; d++ {
@@ -333,6 +352,8 @@ func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult 
 			}
 		}
 
+		// 3. Actualizar: todos los trabajos de esta iteración ya terminaron, así que
+		// ningún trabajador está leyendo los centroides que se reemplazan
 		newCentroids, maxShift := updateCentroids(centroids, globalSums, globalCounts)
 		centroids = newCentroids
 		result.Iterations = iter + 1
@@ -342,6 +363,10 @@ func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult 
 			break
 		}
 	}
+
+	// Cerrar la cola avisa a los trabajadores que terminen; se espera a que salgan
+	close(jobs)
+	wg.Wait()
 
 	result.Centroids = centroids
 	result.Duration = time.Since(start)

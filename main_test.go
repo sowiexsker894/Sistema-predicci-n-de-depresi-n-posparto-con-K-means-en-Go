@@ -162,6 +162,23 @@ func TestConcurrentMatchesSequential(t *testing.T) {
 	}
 }
 
+// Con bloques de 5 puntos, los 12 puntos se reparten en 3 trabajos (5 + 5 + 2):
+// comprueba que la cola de trabajos y el último bloque incompleto funcionen bien
+func TestConcurrentSmallChunks(t *testing.T) {
+	oldChunkSize := ChunkSize
+	ChunkSize = 5
+	defer func() { ChunkSize = oldChunkSize }()
+
+	dataset := makeTestDataset()
+	seq := KMeansSequential(dataset, DefaultSeed)
+	for _, workers := range []int{1, 2, 3, 8} {
+		conc := KMeansConcurrent(dataset, workers, DefaultSeed)
+		if diff := maxCentroidDiff(seq.Centroids, conc.Centroids); diff > 1e-9 {
+			t.Errorf("%d trabajadores: centroides distintos al secuencial (diferencia %.2e)", workers, diff)
+		}
+	}
+}
+
 // Igual que el test anterior pero con el dataset real de 1M. Tarda unos segundos;
 // se salta con 'go test -short' o si no está dataset_1m.csv.
 func TestConcurrentMatchesSequentialRealData(t *testing.T) {
@@ -226,6 +243,23 @@ func BenchmarkConcurrent(b *testing.B) {
 		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				KMeansConcurrent(dataset, workers, DefaultSeed)
+			}
+		})
+	}
+}
+
+// Compara tamaños de bloque con 8 trabajadores: bloques muy chicos generan muchos
+// mensajes por los canales y bloques muy grandes reparten peor el trabajo
+func BenchmarkChunkSize(b *testing.B) {
+	dataset := loadBenchDataset(b)
+	oldChunkSize := ChunkSize
+	defer func() { ChunkSize = oldChunkSize }()
+
+	for _, size := range []int{1000, 10000, 50000, 125000} {
+		ChunkSize = size
+		b.Run(fmt.Sprintf("chunk=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				KMeansConcurrent(dataset, 8, DefaultSeed)
 			}
 		})
 	}
