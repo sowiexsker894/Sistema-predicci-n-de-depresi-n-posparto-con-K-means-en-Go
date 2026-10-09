@@ -209,11 +209,34 @@ Tiempo escritura: 0.03s
 .
 ├── README.md
 ├── primeravanceEDA (1).ipynb        # Análisis y preprocesamiento
-├── data/
-│   ├── post natal data.csv
-│   └── postpartum_depression_processed.parquet
-└── [código Go próximamente]
+├── primeravanceData.ipynb           # Data augmentation a 1M de registros (SDV)
+├── main.go                          # K-means secuencial y concurrente
+├── kmeans.pml                       # Modelo Promela para verificación en Spin
+└── dataset_1m.csv                   # Entrada de main.go (NO versionado, ver abajo)
 ```
+
+### Flujo de datos
+
+```
+post natal data.csv (Kaggle, 1,503 filas)
+  → primeravanceEDA (1).ipynb  → postpartum_depression_processed.parquet (1,503 × 11)
+  → primeravanceData.ipynb     → postpartum_depression_1M.parquet       (1,000,000 × 11)
+  → conversión a CSV           → dataset_1m.csv                          (1,000,000 × 11)
+  → main.go
+```
+
+### ⚠️ `dataset_1m.csv` no se sube al repositorio
+
+El archivo pesa **~200 MB** y GitHub rechaza archivos de más de 100 MB, por eso está
+en `.gitignore`. Para generarlo, coloca `postpartum_depression_1M.parquet` en la raíz
+del proyecto y ejecuta:
+
+```bash
+python -c "import pandas as pd; pd.read_parquet('postpartum_depression_1M.parquet').to_csv('dataset_1m.csv', index=False)"
+```
+
+El CSV resultante tiene encabezado y 11 columnas `float64` en el mismo orden que el
+Parquet; `main.go` salta el encabezado automáticamente.
 
 ---
 
