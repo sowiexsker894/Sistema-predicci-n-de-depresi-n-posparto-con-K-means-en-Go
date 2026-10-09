@@ -99,40 +99,43 @@ El sistema detecta automáticamente:
 '50-55'  → 52.5
 
 # Respuestas binarias/ternarias
-'Yes'                 → 1
-'No'                  → 0
-'Sometimes'           → 0.5
-'Maybe'               → 0.5
-'Not interested to say' → 0 (para Suicide attempt)
+'Yes'                       → 1
+'No', 'Not at all'          → 0
+'Sometimes', 'Maybe'        → 0.5
+'Often'                     → 0.5   (Problems concentrating)
+'Two or more days a week'   → 0.5   (Trouble sleeping)
+'Not interested to say'     → nulo  (Suicide attempt, se imputa en el paso b)
+
+# Cualquier respuesta no prevista lanza un error (replace_strict),
+# en lugar de convertirse en 0 sin aviso.
 ```
 
 ##### b) Imputación: Llenar valores faltantes
 
 ```python
-# Usar mediana de cada columna para valores NULL
-Age_numeric = Age_numeric.fillna(median)
-Síntomas_encoded = Síntomas_encoded.fillna(median)
+# Usar la mediana de cada columna para valores NULL (interpolation='lower'
+# para que sea un valor existente: 0, 0.5 o 1)
+col.fill_null(col.quantile(0.5, interpolation='lower'))
 ```
 
-##### c) Normalización: Z-score (media=0, std=1)
+##### c) Validación: Filtrar registros inválidos (antes de normalizar)
+
+```python
+# Filtros aplicados:
+# - Age entre 18-55 años (el rango que cubre la codificación)
+```
+
+##### d) Normalización: Z-score (media=0, std=1)
 
 **Crítico para K-means:** Normalizar escala diferente
-- Age: 18-50 años
-- Síntomas: 0-1 escala binaria
+- Age: 18-55 años
+- Síntomas: escala 0 / 0.5 / 1
 
 ```python
 normalized = (valor - media) / desviación_estándar
 ```
 
 **Resultado:** Todas las características con media ≈ 0 y std ≈ 1
-
-##### d) Validación: Filtrar registros inválidos
-
-```python
-# Filtros aplicados:
-# - Age entre 18-50 años
-# - Sin valores extremos (outliers)
-```
 
 #### 5️⃣ **Selección de Columnas Finales**
 
