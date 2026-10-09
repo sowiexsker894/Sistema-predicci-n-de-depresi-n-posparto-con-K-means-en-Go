@@ -215,6 +215,7 @@ Tiempo escritura: 0.03s
 ├── primeravanceData.ipynb           # Data augmentation a 1M de registros (SDV)
 ├── go.mod                           # Módulo Go (sin dependencias externas)
 ├── main.go                          # K-means secuencial y concurrente
+├── main_test.go                     # Tests y benchmarks
 ├── kmeans.pml                       # Modelo Promela para verificación en Spin
 └── dataset_1m.csv                   # Entrada de main.go (NO versionado, ver abajo)
 ```
@@ -253,6 +254,17 @@ go run .
 
 Usa las 10 primeras columnas como features; la columna 11 (target) solo se usa para
 evaluar los clusters.
+
+### Tests y benchmarks
+
+```bash
+go test -v                                        # tests (incluye uno con el dataset de 1M)
+go test -short                                    # tests rápidos, sin el dataset de 1M
+go test -bench . -run ^$ -benchtime 3x -count 10  # benchmarks: 10 mediciones por configuración
+```
+
+`main.go` mide cada configuración una sola vez, y en una laptop los tiempos varían
+bastante entre ejecuciones; para el informe se usan las medianas de los benchmarks.
 
 ---
 

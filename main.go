@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	K          = 3        // 3 niveles de riesgo clínico (Bajo, Medio, Alto)
-	Dimensions = 10       // 10 características: Age + 9 síntomas (sin el target)
-	Threshold  = 1e-4     // Tolerancia de convergencia
-	MaxIters   = 15       // Máximo de iteraciones
+	K          = 3    // 3 niveles de riesgo clínico (Bajo, Medio, Alto)
+	Dimensions = 10   // 10 características: Age + 9 síntomas (sin el target)
+	Threshold  = 1e-4 // Tolerancia de convergencia (se compara con la distancia al cuadrado)
+	MaxIters   = 100  // Máximo de iteraciones (con estos datos converge en unas 16)
 )
 
 // La columna 11 del CSV ('Feeling sad or Tearful_encoded') es el target: duplica la
@@ -25,6 +25,14 @@ const TargetColumn = Dimensions
 var targetLabels = [3]string{"No (0)", "Sometimes (0.5)", "Yes (1)"}
 
 type Point []float64
+
+// Resultado de una ejecución de K-means
+type KMeansResult struct {
+	Centroids  []Point
+	Iterations int  // iteraciones ejecutadas
+	Converged  bool // true si los centroides dejaron de moverse antes de MaxIters
+	Duration   time.Duration
+}
 
 func distanceSq(p1, p2 Point) float64 {
 	sum := 0.0
@@ -102,59 +110,97 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 }
 
 // ==========================================
-// 1. K-MEANS SECUENCIAL
+// FUNCIONES COMUNES DE K-MEANS
 // ==========================================
-func KMeansSequential(dataset []Point) ([]Point, time.Duration) {
-	start := time.Now()
+
+// Usa los K primeros puntos del dataset como centroides iniciales
+func initialCentroids(dataset []Point) []Point {
 	centroids := make([]Point, K)
 	for i := 0; i < K; i++ {
 		centroids[i] = make(Point, Dimensions)
 		copy(centroids[i], dataset[i])
 	}
+	return centroids
+}
+
+// Devuelve el índice del centroide más cercano al punto p
+func nearestCentroid(p Point, centroids []Point) int {
+	bestCluster := 0
+	minDist := math.MaxFloat64
+	for c := 0; c < K; c++ {
+		d := distanceSq(p, centroids[c])
+		if d < minDist {
+			minDist = d
+			bestCluster = c
+		}
+	}
+	return bestCluster
+}
+
+// Asigna cada punto a su centroide más cercano y devuelve, por cluster, la suma de
+// sus puntos y cuántos puntos tiene. La versión secuencial la llama con todo el
+// dataset y la concurrente la llama una vez por trabajador con su parte del dataset.
+func assignAndSum(points []Point, centroids []Point) ([]Point, []int) {
+	sums := make([]Point, K)
+	for c := 0; c < K; c++ {
+		sums[c] = make(Point, Dimensions)
+	}
+	counts := make([]int, K)
+
+	for _, p := range points {
+		c := nearestCentroid(p, centroids)
+		counts[c]++
+		for d := 0; d < Dimensions; d++ {
+			sums[c][d] += p[d]
+		}
+	}
+	return sums, counts
+}
+
+// Calcula los nuevos centroides (promedio de los puntos de cada cluster) y devuelve
+// también el mayor desplazamiento al cuadrado, que se usa para saber si convergió.
+func updateCentroids(oldCentroids []Point, sums []Point, counts []int) ([]Point, float64) {
+	newCentroids := make([]Point, K)
+	maxShift := 0.0
+	for c := 0; c < K; c++ {
+		newCentroids[c] = make(Point, Dimensions)
+		if counts[c] > 0 {
+			for d := 0; d < Dimensions; d++ {
+				newCentroids[c][d] = sums[c][d] / float64(counts[c])
+			}
+		}
+		shift := distanceSq(oldCentroids[c], newCentroids[c])
+		if shift > maxShift {
+			maxShift = shift
+		}
+	}
+	return newCentroids, maxShift
+}
+
+// ==========================================
+// 1. K-MEANS SECUENCIAL
+// ==========================================
+func KMeansSequential(dataset []Point) KMeansResult {
+	start := time.Now()
+	result := KMeansResult{}
+	centroids := initialCentroids(dataset)
 
 	for iter := 0; iter < MaxIters; iter++ {
-		sums := make([]Point, K)
-		counts := make([]int, K)
-		for i := 0; i < K; i++ {
-			sums[i] = make(Point, Dimensions)
-		}
+		sums, counts := assignAndSum(dataset, centroids)
 
-		for _, p := range dataset {
-			bestCluster := 0
-			minDist := math.MaxFloat64
-			for c := 0; c < K; c++ {
-				d := distanceSq(p, centroids[c])
-				if d < minDist {
-					minDist = d
-					bestCluster = c
-				}
-			}
-			counts[bestCluster]++
-			for d := 0; d < Dimensions; d++ {
-				sums[bestCluster][d] += p[d]
-			}
-		}
-
-		maxShift := 0.0
-		for c := 0; c < K; c++ {
-			newC := make(Point, Dimensions)
-			if counts[c] > 0 {
-				for d := 0; d < Dimensions; d++ {
-					newC[d] = sums[c][d] / float64(counts[c])
-				}
-			}
-			shift := distanceSq(centroids[c], newC)
-			if shift > maxShift {
-				maxShift = shift
-			}
-			centroids[c] = newC
-		}
+		newCentroids, maxShift := updateCentroids(centroids, sums, counts)
+		centroids = newCentroids
+		result.Iterations = iter + 1
 
 		if maxShift < Threshold {
+			result.Converged = true
 			break
 		}
 	}
-	return centroids, time.Since(start)
+
+	result.Centroids = centroids
+	result.Duration = time.Since(start)
+	return result
 }
 
 // ==========================================
@@ -165,13 +211,10 @@ type PartialResult struct {
 	Counts []int
 }
 
-func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) {
+func KMeansConcurrent(dataset []Point, numWorkers int) KMeansResult {
 	start := time.Now()
-	centroids := make([]Point, K)
-	for i := 0; i < K; i++ {
-		centroids[i] = make(Point, Dimensions)
-		copy(centroids[i], dataset[i])
-	}
+	result := KMeansResult{}
+	centroids := initialCentroids(dataset)
 
 	n := len(dataset)
 	chunkSize := (n + numWorkers - 1) / numWorkers
@@ -180,6 +223,7 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 		resultsChan := make(chan PartialResult, numWorkers)
 		var wg sync.WaitGroup
 
+		// Cada trabajador procesa su parte del dataset con los centroides actuales
 		for w := 0; w < numWorkers; w++ {
 			startIdx := w * chunkSize
 			endIdx := startIdx + chunkSize
@@ -193,29 +237,8 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 			wg.Add(1)
 			go func(subDataset []Point, currentCentroids []Point) {
 				defer wg.Done()
-				localSums := make([]Point, K)
-				localCounts := make([]int, K)
-				for i := 0; i < K; i++ {
-					localSums[i] = make(Point, Dimensions)
-				}
-
-				for _, p := range subDataset {
-					bestCluster := 0
-					minDist := math.MaxFloat64
-					for c := 0; c < K; c++ {
-						d := distanceSq(p, currentCentroids[c])
-						if d < minDist {
-							minDist = d
-							bestCluster = c
-						}
-					}
-					localCounts[bestCluster]++
-					for d := 0; d < Dimensions; d++ {
-						localSums[bestCluster][d] += p[d]
-					}
-				}
-
-				resultsChan <- PartialResult{Sums: localSums, Counts: localCounts}
+				sums, counts := assignAndSum(subDataset, currentCentroids)
+				resultsChan <- PartialResult{Sums: sums, Counts: counts}
 			}(dataset[startIdx:endIdx], centroids)
 		}
 
@@ -224,11 +247,12 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 			close(resultsChan)
 		}()
 
+		// Reducción: juntar los resultados parciales de todos los trabajadores
 		globalSums := make([]Point, K)
-		globalCounts := make([]int, K)
-		for i := 0; i < K; i++ {
-			globalSums[i] = make(Point, Dimensions)
+		for c := 0; c < K; c++ {
+			globalSums[c] = make(Point, Dimensions)
 		}
+		globalCounts := make([]int, K)
 
 		for res := range resultsChan {
 			for c := 0; c < K; c++ {
@@ -239,26 +263,19 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 			}
 		}
 
-		maxShift := 0.0
-		for c := 0; c < K; c++ {
-			newC := make(Point, Dimensions)
-			if globalCounts[c] > 0 {
-				for d := 0; d < Dimensions; d++ {
-					newC[d] = globalSums[c][d] / float64(globalCounts[c])
-				}
-			}
-			shift := distanceSq(centroids[c], newC)
-			if shift > maxShift {
-				maxShift = shift
-			}
-			centroids[c] = newC
-		}
+		newCentroids, maxShift := updateCentroids(centroids, globalSums, globalCounts)
+		centroids = newCentroids
+		result.Iterations = iter + 1
 
 		if maxShift < Threshold {
+			result.Converged = true
 			break
 		}
 	}
-	return centroids, time.Since(start)
+
+	result.Centroids = centroids
+	result.Duration = time.Since(start)
+	return result
 }
 
 // ==========================================
@@ -271,16 +288,8 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 func printClusterVsTarget(dataset []Point, targets []int, centroids []Point) {
 	var counts [K][3]int
 	for i, p := range dataset {
-		bestCluster := 0
-		minDist := math.MaxFloat64
-		for c := 0; c < K; c++ {
-			d := distanceSq(p, centroids[c])
-			if d < minDist {
-				minDist = d
-				bestCluster = c
-			}
-		}
-		counts[bestCluster][targets[i]]++
+		c := nearestCentroid(p, centroids)
+		counts[c][targets[i]]++
 	}
 
 	fmt.Println("Clusters vs target 'Feeling sad or Tearful' (no usado en el clustering):")
@@ -321,16 +330,20 @@ func main() {
 	fmt.Printf("Carga completada en %v. Total registros: %d | Dimensiones: %d\n\n", time.Since(t0), len(dataset), Dimensions)
 
 	fmt.Println("Iniciando procesamiento secuencial...")
-	centroids, seqTime := KMeansSequential(dataset)
-	fmt.Printf("Tiempo Secuencial: %v\n\n", seqTime)
+	seq := KMeansSequential(dataset)
+	fmt.Printf("Tiempo Secuencial: %v | Iteraciones: %d | Convergió: %v\n\n", seq.Duration, seq.Iterations, seq.Converged)
 
-	printClusterVsTarget(dataset, targets, centroids)
+	printClusterVsTarget(dataset, targets, seq.Centroids)
 
 	fmt.Println("Iniciando procesamiento concurrente (Worker Pools)...")
-	workerCounts := []int{2, 4, 8, 16}
+	workerCounts := []int{2, 4, 8, 12, 16}
 	for _, w := range workerCounts {
-		_, concTime := KMeansConcurrent(dataset, w)
-		speedup := float64(seqTime.Milliseconds()) / float64(concTime.Milliseconds())
-		fmt.Printf("Trabajadores: %2d | Tiempo Concurrente: %v | Speedup: %.2fx\n", w, concTime, speedup)
+		conc := KMeansConcurrent(dataset, w)
+		// Seconds() conserva los decimales (Milliseconds() los truncaba)
+		speedup := seq.Duration.Seconds() / conc.Duration.Seconds()
+		fmt.Printf("Trabajadores: %2d | Tiempo Concurrente: %v | Iteraciones: %d | Speedup: %.2fx\n",
+			w, conc.Duration, conc.Iterations, speedup)
 	}
+	fmt.Println("\nNota: tiempos de una sola ejecución. Para medir con varias repeticiones usar")
+	fmt.Println("los benchmarks: go test -bench . -run ^$ -benchtime 3x -count 10")
 }
