@@ -213,6 +213,7 @@ Tiempo escritura: 0.03s
 ├── README.md
 ├── primeravanceEDA.ipynb            # Análisis y preprocesamiento
 ├── primeravanceData.ipynb           # Data augmentation a 1M de registros (SDV)
+├── go.mod                           # Módulo Go (sin dependencias externas)
 ├── main.go                          # K-means secuencial y concurrente
 ├── kmeans.pml                       # Modelo Promela para verificación en Spin
 └── dataset_1m.csv                   # Entrada de main.go (NO versionado, ver abajo)
@@ -240,6 +241,18 @@ python -c "import pandas as pd; pd.read_parquet('postpartum_depression_1M.parque
 
 El CSV resultante tiene encabezado y 11 columnas `float64` en el mismo orden que el
 Parquet; `main.go` salta el encabezado automáticamente.
+
+### Ejecutar K-means en Go
+
+Requiere Go 1.21 o superior (descarga automáticamente la versión indicada en `go.mod`).
+Con `dataset_1m.csv` en la raíz del proyecto:
+
+```bash
+go run .
+```
+
+Usa las 10 primeras columnas como features; la columna 11 (target) solo se usa para
+evaluar los clusters.
 
 ---
 
