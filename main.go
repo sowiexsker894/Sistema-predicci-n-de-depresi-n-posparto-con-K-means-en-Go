@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,17 +15,30 @@ import (
 )
 
 const (
-	K          = 3    // 3 niveles de riesgo clínico (Bajo, Medio, Alto)
-	Dimensions = 10   // 10 características: Age + 9 síntomas (sin el target)
-	Threshold  = 1e-4 // Tolerancia de convergencia (se compara con la distancia al cuadrado)
-	MaxIters   = 100  // Máximo de iteraciones (con estos datos converge en unas 16)
+	K           = 3    // 3 niveles de riesgo clínico (Bajo, Medio, Alto)
+	Dimensions  = 9    // 9 características: Age + 8 síntomas (sin 'Feeling sad', que es el target)
+	Threshold   = 1e-4 // Tolerancia de convergencia (se compara con la distancia al cuadrado)
+	MaxIters    = 100  // Máximo de iteraciones
+	Restarts    = 5    // Inicializaciones K-means++ que se prueban en main (gana la de menor inercia)
+	DefaultSeed = 3    // Semilla de tests y benchmarks: la que main elige como mejor (menor inercia)
 )
 
-// La columna 11 del CSV ('Feeling sad or Tearful_encoded') es el target: duplica la
-// columna 2 y no entra al clustering, solo se usa para evaluar los clusters.
-const TargetColumn = Dimensions
+// Columnas del CSV:
+//
+//	0     Age_normalized                      -> feature
+//	1     Feeling sad or Tearful_normalized   -> NO se usa: es el mismo dato que el target
+//	2-9   síntomas normalizados               -> features
+//	10    Feeling sad or Tearful_encoded      -> target (solo para evaluar los clusters)
+var featureColumns = [Dimensions]int{0, 2, 3, 4, 5, 6, 7, 8, 9}
+
+const TargetColumn = 10
+
+var featureNames = [Dimensions]string{"Age", "Irritable", "Trouble sleeping", "Concentrating",
+	"Overeating/appetite", "Anxious", "Guilt", "Bonding with baby", "Suicide attempt"}
 
 var targetLabels = [3]string{"No (0)", "Sometimes (0.5)", "Yes (1)"}
+
+var riskLabels = [K]string{"Bajo", "Medio", "Alto"}
 
 type Point []float64
 
@@ -41,6 +57,12 @@ func distanceSq(p1, p2 Point) float64 {
 		sum += diff * diff
 	}
 	return sum
+}
+
+func copyPoint(p Point) Point {
+	c := make(Point, len(p))
+	copy(c, p)
+	return c
 }
 
 // Carga optimizada del CSV de 1M de registros sin paquetes de terceros.
@@ -81,7 +103,7 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 				point := make(Point, Dimensions)
 				valid := true
 				for i := 0; i < Dimensions; i++ {
-					val, parseErr := strconv.ParseFloat(strings.TrimSpace(parts[i]), 64)
+					val, parseErr := strconv.ParseFloat(strings.TrimSpace(parts[featureColumns[i]]), 64)
 					if parseErr != nil {
 						valid = false
 						break
@@ -113,12 +135,49 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 // FUNCIONES COMUNES DE K-MEANS
 // ==========================================
 
-// Usa los K primeros puntos del dataset como centroides iniciales
-func initialCentroids(dataset []Point) []Point {
-	centroids := make([]Point, K)
-	for i := 0; i < K; i++ {
-		centroids[i] = make(Point, Dimensions)
-		copy(centroids[i], dataset[i])
+// K-means++: el primer centroide es un punto al azar y cada uno de los siguientes se
+// elige al azar dando más probabilidad a los puntos lejanos de los centroides ya
+// elegidos (probabilidad proporcional a la distancia al cuadrado). Así los centroides
+// iniciales quedan separados entre sí. Con la misma semilla siempre elige los mismos.
+func initialCentroids(dataset []Point, seed int64) []Point {
+	rng := rand.New(rand.NewSource(seed))
+	centroids := make([]Point, 0, K)
+	centroids = append(centroids, copyPoint(dataset[rng.Intn(len(dataset))]))
+
+	// minDist[i] = distancia al cuadrado del punto i a su centroide elegido más cercano
+	minDist := make([]float64, len(dataset))
+	for i := 0; i < len(dataset); i++ {
+		minDist[i] = distanceSq(dataset[i], centroids[0])
+	}
+
+	for len(centroids) < K {
+		total := 0.0
+		for i := 0; i < len(dataset); i++ {
+			total += minDist[i]
+		}
+
+		// Elegir un punto: se toma un número al azar entre 0 y total y se recorren los
+		// puntos acumulando sus distancias hasta superarlo
+		r := rng.Float64() * total
+		chosen := len(dataset) - 1
+		accumulated := 0.0
+		for i := 0; i < len(dataset); i++ {
+			accumulated += minDist[i]
+			if accumulated > r {
+				chosen = i
+				break
+			}
+		}
+		newCentroid := copyPoint(dataset[chosen])
+		centroids = append(centroids, newCentroid)
+
+		// Actualizar la distancia de cada punto teniendo en cuenta el nuevo centroide
+		for i := 0; i < len(dataset); i++ {
+			d := distanceSq(dataset[i], newCentroid)
+			if d < minDist[i] {
+				minDist[i] = d
+			}
+		}
 	}
 	return centroids
 }
@@ -177,13 +236,24 @@ func updateCentroids(oldCentroids []Point, sums []Point, counts []int) ([]Point,
 	return newCentroids, maxShift
 }
 
+// Inercia: suma de las distancias al cuadrado de cada punto a su centroide.
+// Es lo que K-means minimiza: cuanto menor, más compactos son los clusters.
+func inertia(dataset []Point, centroids []Point) float64 {
+	total := 0.0
+	for _, p := range dataset {
+		c := nearestCentroid(p, centroids)
+		total += distanceSq(p, centroids[c])
+	}
+	return total
+}
+
 // ==========================================
 // 1. K-MEANS SECUENCIAL
 // ==========================================
-func KMeansSequential(dataset []Point) KMeansResult {
+func KMeansSequential(dataset []Point, seed int64) KMeansResult {
 	start := time.Now()
 	result := KMeansResult{}
-	centroids := initialCentroids(dataset)
+	centroids := initialCentroids(dataset, seed)
 
 	for iter := 0; iter < MaxIters; iter++ {
 		sums, counts := assignAndSum(dataset, centroids)
@@ -211,10 +281,10 @@ type PartialResult struct {
 	Counts []int
 }
 
-func KMeansConcurrent(dataset []Point, numWorkers int) KMeansResult {
+func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult {
 	start := time.Now()
 	result := KMeansResult{}
-	centroids := initialCentroids(dataset)
+	centroids := initialCentroids(dataset, seed)
 
 	n := len(dataset)
 	chunkSize := (n + numWorkers - 1) / numWorkers
@@ -279,21 +349,83 @@ func KMeansConcurrent(dataset []Point, numWorkers int) KMeansResult {
 }
 
 // ==========================================
-// 3. EVALUACIÓN: CLUSTERS VS TARGET
+// 3. NIVELES DE RIESGO Y EVALUACIÓN
 // ==========================================
-// Asigna cada punto a su centroide más cercano y muestra cuántos registros de cada
-// nivel del target cayeron en cada cluster. La pureza es la fracción de registros que
-// pertenece al nivel mayoritario de su cluster; se compara con la línea base (la
-// proporción del nivel más frecuente), que es la pureza de clusters que no separan nada.
-func printClusterVsTarget(dataset []Point, targets []int, centroids []Point) {
+
+// Valor mínimo y máximo de cada columna del dataset (en valores normalizados)
+func columnRanges(dataset []Point) (Point, Point) {
+	mins := copyPoint(dataset[0])
+	maxs := copyPoint(dataset[0])
+	for _, p := range dataset {
+		for d := 0; d < Dimensions; d++ {
+			if p[d] < mins[d] {
+				mins[d] = p[d]
+			}
+			if p[d] > maxs[d] {
+				maxs[d] = p[d]
+			}
+		}
+	}
+	return mins, maxs
+}
+
+// Convierte el valor normalizado de un síntoma a su escala original (0 = No,
+// 0.5 = respuesta intermedia, 1 = Yes). El z-score es una transformación lineal, así
+// que el mínimo de la columna corresponde a 0, el máximo a 1 y el intermedio a 0.5.
+func toOriginalScale(value, minValue, maxValue float64) float64 {
+	return (value - minValue) / (maxValue - minValue)
+}
+
+// Severidad de un centroide: promedio de sus síntomas en la escala original 0-1 (sin
+// la edad, que está en la posición 0). Se usa la escala original porque en la
+// normalizada un síntoma poco frecuente toma valores más altos y pesaría más.
+func severity(centroid Point, mins, maxs Point) float64 {
+	sum := 0.0
+	for d := 1; d < Dimensions; d++ {
+		sum += toOriginalScale(centroid[d], mins[d], maxs[d])
+	}
+	return sum / float64(Dimensions-1)
+}
+
+// Ordena los centroides de menor a mayor severidad: 0 = Bajo, 1 = Medio, 2 = Alto
+func sortBySeverity(centroids []Point, mins, maxs Point) []Point {
+	sorted := make([]Point, K)
+	copy(sorted, centroids)
+	sort.Slice(sorted, func(i, j int) bool {
+		return severity(sorted[i], mins, maxs) < severity(sorted[j], mins, maxs)
+	})
+	return sorted
+}
+
+// Muestra el perfil de síntomas de cada nivel de riesgo y cuántos registros de cada
+// nivel del target ('Feeling sad', que no se usó en el clustering) cayeron en cada uno.
+// La pureza es la fracción de registros que pertenece al nivel mayoritario de su
+// cluster; se compara con la línea base (la proporción del nivel más frecuente).
+func printRiskLevels(dataset []Point, targets []int, centroids []Point) {
+	mins, maxs := columnRanges(dataset)
+	centroids = sortBySeverity(centroids, mins, maxs)
+
+	// Edad en z-score; síntomas en escala original (0 = No, 0.5 = intermedio, 1 = Yes)
+	fmt.Println("Perfil de cada nivel de riesgo (centroides; síntomas en escala 0-1):")
+	fmt.Printf("%-21s %8s %8s %8s\n", "Característica", riskLabels[0], riskLabels[1], riskLabels[2])
+	fmt.Printf("%-21s %8.2f %8.2f %8.2f\n", "Age (z-score)", centroids[0][0], centroids[1][0], centroids[2][0])
+	for d := 1; d < Dimensions; d++ {
+		fmt.Printf("%-21s %8.2f %8.2f %8.2f\n", featureNames[d],
+			toOriginalScale(centroids[0][d], mins[d], maxs[d]),
+			toOriginalScale(centroids[1][d], mins[d], maxs[d]),
+			toOriginalScale(centroids[2][d], mins[d], maxs[d]))
+	}
+	fmt.Printf("%-21s %8.2f %8.2f %8.2f\n\n", "Severidad (promedio)",
+		severity(centroids[0], mins, maxs), severity(centroids[1], mins, maxs), severity(centroids[2], mins, maxs))
+
 	var counts [K][3]int
 	for i, p := range dataset {
 		c := nearestCentroid(p, centroids)
 		counts[c][targets[i]]++
 	}
 
-	fmt.Println("Clusters vs target 'Feeling sad or Tearful' (no usado en el clustering):")
-	fmt.Printf("%-10s %10s %16s %10s %10s\n", "Cluster", targetLabels[0], targetLabels[1], targetLabels[2], "Total")
+	fmt.Println("Niveles de riesgo vs target 'Feeling sad or Tearful' (no usado en el clustering):")
+	fmt.Printf("%-10s %10s %16s %10s %10s\n", "Riesgo", targetLabels[0], targetLabels[1], targetLabels[2], "Total")
 	majority := 0
 	var levelTotals [3]int
 	for c := 0; c < K; c++ {
@@ -306,7 +438,7 @@ func printClusterVsTarget(dataset []Point, targets []int, centroids []Point) {
 			}
 		}
 		majority += maxCount
-		fmt.Printf("%-10d %10d %16d %10d %10d\n", c, counts[c][0], counts[c][1], counts[c][2], total)
+		fmt.Printf("%-10s %10d %16d %10d %10d\n", riskLabels[c], counts[c][0], counts[c][1], counts[c][2], total)
 	}
 	baseline := 0
 	for _, n := range levelTotals {
@@ -329,16 +461,32 @@ func main() {
 	}
 	fmt.Printf("Carga completada en %v. Total registros: %d | Dimensiones: %d\n\n", time.Since(t0), len(dataset), Dimensions)
 
+	// Cada semilla de K-means++ puede llevar a una solución distinta: se prueban varias
+	// (con la versión concurrente, que es más rápida) y se elige la de menor inercia
+	fmt.Printf("Probando %d inicializaciones K-means++ (gana la de menor inercia)...\n", Restarts)
+	bestSeed := int64(1)
+	bestInertia := math.MaxFloat64
+	for seed := int64(1); seed <= Restarts; seed++ {
+		res := KMeansConcurrent(dataset, runtime.NumCPU(), seed)
+		in := inertia(dataset, res.Centroids)
+		fmt.Printf("  Semilla %d: inercia %.0f | iteraciones %d\n", seed, in, res.Iterations)
+		if in < bestInertia {
+			bestInertia = in
+			bestSeed = seed
+		}
+	}
+	fmt.Printf("Mejor semilla: %d\n\n", bestSeed)
+
 	fmt.Println("Iniciando procesamiento secuencial...")
-	seq := KMeansSequential(dataset)
+	seq := KMeansSequential(dataset, bestSeed)
 	fmt.Printf("Tiempo Secuencial: %v | Iteraciones: %d | Convergió: %v\n\n", seq.Duration, seq.Iterations, seq.Converged)
 
-	printClusterVsTarget(dataset, targets, seq.Centroids)
+	printRiskLevels(dataset, targets, seq.Centroids)
 
 	fmt.Println("Iniciando procesamiento concurrente (Worker Pools)...")
 	workerCounts := []int{2, 4, 8, 12, 16}
 	for _, w := range workerCounts {
-		conc := KMeansConcurrent(dataset, w)
+		conc := KMeansConcurrent(dataset, w, bestSeed)
 		// Seconds() conserva los decimales (Milliseconds() los truncaba)
 		speedup := seq.Duration.Seconds() / conc.Duration.Seconds()
 		fmt.Printf("Trabajadores: %2d | Tiempo Concurrente: %v | Iteraciones: %d | Speedup: %.2fx\n",

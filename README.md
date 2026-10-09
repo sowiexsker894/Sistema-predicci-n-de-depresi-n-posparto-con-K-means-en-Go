@@ -252,8 +252,11 @@ Con `dataset_1m.csv` en la raíz del proyecto:
 go run .
 ```
 
-Usa las 10 primeras columnas como features; la columna 11 (target) solo se usa para
-evaluar los clusters.
+Usa 9 features (Age + 8 síntomas). `Feeling sad or Tearful` es el target: tanto su
+columna normalizada (2) como la codificada (11) quedan fuera del clustering y solo se
+usan para evaluar los clusters. Los centroides iniciales se eligen con K-means++
+(5 semillas, gana la de menor inercia) y los clusters se ordenan por severidad media
+de los síntomas como riesgo Bajo, Medio y Alto.
 
 ### Tests y benchmarks
 

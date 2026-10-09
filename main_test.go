@@ -12,9 +12,8 @@ import (
 // ==========================================
 
 // Crea un dataset pequeño con 3 grupos bien separados: todos los valores de un punto
-// están cerca de 0, de 5 o de 10. Los 3 primeros puntos son de grupos distintos, así la
-// inicialización (los K primeros puntos) empieza con un centroide en cada grupo.
-// Como los desplazamientos suman 0, el centro exacto de cada grupo es 0, 5 y 10.
+// están cerca de 0, de 5 o de 10. Como los desplazamientos suman 0, el centro exacto
+// de cada grupo es 0, 5 y 10.
 func makeTestDataset() []Point {
 	groupCenters := []float64{0, 5, 10}
 	offsets := []float64{-0.3, -0.1, 0.1, 0.3}
@@ -67,30 +66,93 @@ func TestNearestCentroid(t *testing.T) {
 	}
 }
 
-func TestSequentialFindsKnownClusters(t *testing.T) {
-	result := KMeansSequential(makeTestDataset())
-
-	if !result.Converged {
-		t.Fatalf("no convergió en %d iteraciones", result.Iterations)
+func TestInitialCentroidsSameSeedSameResult(t *testing.T) {
+	dataset := makeTestDataset()
+	a := initialCentroids(dataset, DefaultSeed)
+	b := initialCentroids(dataset, DefaultSeed)
+	if diff := maxCentroidDiff(a, b); diff != 0 {
+		t.Errorf("con la misma semilla K-means++ eligió centroides distintos (diferencia %.2e)", diff)
 	}
-	expected := []float64{0, 5, 10}
-	for c := 0; c < K; c++ {
-		for d := 0; d < Dimensions; d++ {
-			if math.Abs(result.Centroids[c][d]-expected[c]) > 1e-9 {
-				t.Fatalf("centroide %d = %v, se esperaba %v en todas las dimensiones",
-					c, result.Centroids[c], expected[c])
+}
+
+func TestSequentialFindsKnownClusters(t *testing.T) {
+	// Se prueban varias semillas: con grupos tan separados todas deben encontrarlos
+	for seed := int64(1); seed <= 5; seed++ {
+		result := KMeansSequential(makeTestDataset(), seed)
+		if !result.Converged {
+			t.Fatalf("semilla %d: no convergió en %d iteraciones", seed, result.Iterations)
+		}
+
+		// K-means++ puede devolver los clusters en cualquier orden: se ordenan por severidad
+		mins, maxs := columnRanges(makeTestDataset())
+		centroids := sortBySeverity(result.Centroids, mins, maxs)
+		expected := []float64{0, 5, 10}
+		for c := 0; c < K; c++ {
+			for d := 0; d < Dimensions; d++ {
+				if math.Abs(centroids[c][d]-expected[c]) > 1e-9 {
+					t.Fatalf("semilla %d: centroide %d = %v, se esperaba %v en todas las dimensiones",
+						seed, c, centroids[c], expected[c])
+				}
 			}
+		}
+	}
+}
+
+func TestSortBySeverity(t *testing.T) {
+	// La edad (posición 0) no debe influir: el primer centroide tiene la mayor edad
+	// pero los síntomas más bajos, así que debe quedar como riesgo Bajo
+	low := make(Point, Dimensions)
+	medium := make(Point, Dimensions)
+	high := make(Point, Dimensions)
+	low[0] = 100
+	for d := 1; d < Dimensions; d++ {
+		low[d] = -1
+		medium[d] = 0
+		high[d] = 1
+	}
+
+	// Rango de cada columna: de -1 (No) a 1 (Yes); la edad de 0 a 100
+	mins := make(Point, Dimensions)
+	maxs := make(Point, Dimensions)
+	maxs[0] = 100
+	for d := 1; d < Dimensions; d++ {
+		mins[d] = -1
+		maxs[d] = 1
+	}
+
+	sorted := sortBySeverity([]Point{high, low, medium}, mins, maxs)
+	if sorted[0][1] != -1 || sorted[1][1] != 0 || sorted[2][1] != 1 {
+		t.Errorf("orden incorrecto: %v", sorted)
+	}
+}
+
+func TestToOriginalScale(t *testing.T) {
+	// Valores normalizados reales de 'Irritable' (No, Sometimes, Yes)
+	minValue, maxValue := -1.230936, 1.151674
+	middle := (minValue + maxValue) / 2
+
+	tests := []struct {
+		value    float64
+		expected float64
+	}{
+		{minValue, 0},
+		{middle, 0.5},
+		{maxValue, 1},
+	}
+	for _, tc := range tests {
+		if got := toOriginalScale(tc.value, minValue, maxValue); math.Abs(got-tc.expected) > 1e-9 {
+			t.Errorf("toOriginalScale(%v) = %v, se esperaba %v", tc.value, got, tc.expected)
 		}
 	}
 }
 
 func TestConcurrentMatchesSequential(t *testing.T) {
 	dataset := makeTestDataset()
-	seq := KMeansSequential(dataset)
+	seq := KMeansSequential(dataset, DefaultSeed)
 
 	// 20 trabajadores > 12 puntos: comprueba que no falle si sobran trabajadores
 	for _, workers := range []int{1, 2, 3, 5, 12, 20} {
-		conc := KMeansConcurrent(dataset, workers)
+		conc := KMeansConcurrent(dataset, workers, DefaultSeed)
 		if diff := maxCentroidDiff(seq.Centroids, conc.Centroids); diff > 1e-9 {
 			t.Errorf("%d trabajadores: centroides distintos al secuencial (diferencia %.2e)", workers, diff)
 		}
@@ -114,12 +176,12 @@ func TestConcurrentMatchesSequentialRealData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seq := KMeansSequential(dataset)
+	seq := KMeansSequential(dataset, DefaultSeed)
 	if !seq.Converged {
 		t.Errorf("el secuencial no convergió en %d iteraciones", seq.Iterations)
 	}
 	for _, workers := range []int{2, 8, 16} {
-		conc := KMeansConcurrent(dataset, workers)
+		conc := KMeansConcurrent(dataset, workers, DefaultSeed)
 		// Tolerancia pequeña: sumar en distinto orden cambia los últimos decimales
 		if diff := maxCentroidDiff(seq.Centroids, conc.Centroids); diff > 1e-9 {
 			t.Errorf("%d trabajadores: centroides distintos al secuencial (diferencia %.2e)", workers, diff)
@@ -154,7 +216,7 @@ func BenchmarkSequential(b *testing.B) {
 	dataset := loadBenchDataset(b)
 	b.ResetTimer() // no contar el tiempo de carga del CSV
 	for i := 0; i < b.N; i++ {
-		KMeansSequential(dataset)
+		KMeansSequential(dataset, DefaultSeed)
 	}
 }
 
@@ -163,7 +225,7 @@ func BenchmarkConcurrent(b *testing.B) {
 	for _, workers := range []int{2, 4, 8, 12, 16} {
 		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				KMeansConcurrent(dataset, workers)
+				KMeansConcurrent(dataset, workers, DefaultSeed)
 			}
 		})
 	}
