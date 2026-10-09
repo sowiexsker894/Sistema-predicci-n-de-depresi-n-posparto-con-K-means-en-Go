@@ -13,10 +13,16 @@ import (
 
 const (
 	K          = 3        // 3 niveles de riesgo clínico (Bajo, Medio, Alto)
-	Dimensions = 11       // 11 características clínicas sintomáticas
+	Dimensions = 10       // 10 características: Age + 9 síntomas (sin el target)
 	Threshold  = 1e-4     // Tolerancia de convergencia
 	MaxIters   = 15       // Máximo de iteraciones
 )
+
+// La columna 11 del CSV ('Feeling sad or Tearful_encoded') es el target: duplica la
+// columna 2 y no entra al clustering, solo se usa para evaluar los clusters.
+const TargetColumn = Dimensions
+
+var targetLabels = [3]string{"No (0)", "Sometimes (0.5)", "Yes (1)"}
 
 type Point []float64
 
@@ -29,16 +35,18 @@ func distanceSq(p1, p2 Point) float64 {
 	return sum
 }
 
-// Carga optimizada del CSV de 1M de registros sin paquetes de terceros
-func loadDatasetFromCSV(filePath string) ([]Point, error) {
+// Carga optimizada del CSV de 1M de registros sin paquetes de terceros.
+// Devuelve las features para K-means y, por separado, el nivel del target (0, 1, 2).
+func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 
 	// Prealocar memoria para 1,000,000 de puntos
 	dataset := make([]Point, 0, 1000000)
+	targets := make([]int, 0, 1000000)
 	reader := bufio.NewReaderSize(file, 1024*1024) // Buffer de 1 MB para lectura veloz
 
 	isHeader := true
@@ -61,7 +69,7 @@ func loadDatasetFromCSV(filePath string) ([]Point, error) {
 				}
 			}
 
-			if len(parts) >= Dimensions {
+			if len(parts) > TargetColumn {
 				point := make(Point, Dimensions)
 				valid := true
 				for i := 0; i < Dimensions; i++ {
@@ -72,8 +80,15 @@ func loadDatasetFromCSV(filePath string) ([]Point, error) {
 					}
 					point[i] = val
 				}
+				// El target solo puede ser 0, 0.5 o 1 -> nivel 0, 1 o 2
+				target, parseErr := strconv.ParseFloat(strings.TrimSpace(parts[TargetColumn]), 64)
+				level := int(math.Round(target * 2))
+				if parseErr != nil || level < 0 || level > 2 || float64(level) != target*2 {
+					valid = false
+				}
 				if valid {
 					dataset = append(dataset, point)
+					targets = append(targets, level)
 				}
 			}
 		}
@@ -83,7 +98,7 @@ func loadDatasetFromCSV(filePath string) ([]Point, error) {
 		}
 	}
 
-	return dataset, nil
+	return dataset, targets, nil
 }
 
 // ==========================================
@@ -246,11 +261,59 @@ func KMeansConcurrent(dataset []Point, numWorkers int) ([]Point, time.Duration) 
 	return centroids, time.Since(start)
 }
 
+// ==========================================
+// 3. EVALUACIÓN: CLUSTERS VS TARGET
+// ==========================================
+// Asigna cada punto a su centroide más cercano y muestra cuántos registros de cada
+// nivel del target cayeron en cada cluster. La pureza es la fracción de registros que
+// pertenece al nivel mayoritario de su cluster; se compara con la línea base (la
+// proporción del nivel más frecuente), que es la pureza de clusters que no separan nada.
+func printClusterVsTarget(dataset []Point, targets []int, centroids []Point) {
+	var counts [K][3]int
+	for i, p := range dataset {
+		bestCluster := 0
+		minDist := math.MaxFloat64
+		for c := 0; c < K; c++ {
+			d := distanceSq(p, centroids[c])
+			if d < minDist {
+				minDist = d
+				bestCluster = c
+			}
+		}
+		counts[bestCluster][targets[i]]++
+	}
+
+	fmt.Println("Clusters vs target 'Feeling sad or Tearful' (no usado en el clustering):")
+	fmt.Printf("%-10s %10s %16s %10s %10s\n", "Cluster", targetLabels[0], targetLabels[1], targetLabels[2], "Total")
+	majority := 0
+	var levelTotals [3]int
+	for c := 0; c < K; c++ {
+		total, maxCount := 0, 0
+		for t := 0; t < 3; t++ {
+			total += counts[c][t]
+			levelTotals[t] += counts[c][t]
+			if counts[c][t] > maxCount {
+				maxCount = counts[c][t]
+			}
+		}
+		majority += maxCount
+		fmt.Printf("%-10d %10d %16d %10d %10d\n", c, counts[c][0], counts[c][1], counts[c][2], total)
+	}
+	baseline := 0
+	for _, n := range levelTotals {
+		if n > baseline {
+			baseline = n
+		}
+	}
+	fmt.Printf("Pureza: %.3f (línea base sin clustering: %.3f)\n\n",
+		float64(majority)/float64(len(dataset)), float64(baseline)/float64(len(dataset)))
+}
+
 func main() {
 	csvPath := "dataset_1m.csv"
 	fmt.Printf("Cargando dataset clínico desde %s...\n", csvPath)
 	t0 := time.Now()
-	dataset, err := loadDatasetFromCSV(csvPath)
+	dataset, targets, err := loadDatasetFromCSV(csvPath)
 	if err != nil {
 		fmt.Printf("Error critico al cargar el archivo CSV: %v\n", err)
 		return
@@ -258,8 +321,10 @@ func main() {
 	fmt.Printf("Carga completada en %v. Total registros: %d | Dimensiones: %d\n\n", time.Since(t0), len(dataset), Dimensions)
 
 	fmt.Println("Iniciando procesamiento secuencial...")
-	_, seqTime := KMeansSequential(dataset)
+	centroids, seqTime := KMeansSequential(dataset)
 	fmt.Printf("Tiempo Secuencial: %v\n\n", seqTime)
+
+	printClusterVsTarget(dataset, targets, centroids)
 
 	fmt.Println("Iniciando procesamiento concurrente (Worker Pools)...")
 	workerCounts := []int{2, 4, 8, 16}
