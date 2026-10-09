@@ -208,7 +208,7 @@ Tiempo escritura: 0.03s
 ```
 .
 ├── README.md
-├── primeravanceEDA (1).ipynb        # Análisis y preprocesamiento
+├── primeravanceEDA.ipynb            # Análisis y preprocesamiento
 ├── primeravanceData.ipynb           # Data augmentation a 1M de registros (SDV)
 ├── main.go                          # K-means secuencial y concurrente
 ├── kmeans.pml                       # Modelo Promela para verificación en Spin
@@ -219,7 +219,7 @@ Tiempo escritura: 0.03s
 
 ```
 post natal data.csv (Kaggle, 1,503 filas)
-  → primeravanceEDA (1).ipynb  → postpartum_depression_processed.parquet (1,503 × 11)
+  → primeravanceEDA.ipynb      → postpartum_depression_processed.parquet (1,503 × 11)
   → primeravanceData.ipynb     → postpartum_depression_1M.parquet       (1,000,000 × 11)
   → conversión a CSV           → dataset_1m.csv                          (1,000,000 × 11)
   → main.go
