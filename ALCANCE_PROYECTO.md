@@ -111,7 +111,7 @@ G5 mejora todos los tiempos; el speedup baja solo porque el secuencial mejora m�
 | s | Conclusiones y recomendaciones | ✅ Borrador en la sección 10 de `CC65-TP-202620_TP.docx`; ⚠️ adaptarlo con las palabras del equipo | Informe |
 | t | Referencias APA | ✅ Sección 11 del informe (31 referencias, APA 7); ⚠️ verificar las de la PC1 | Informe |
 | u | Código en GitHub con historial | ✅ Subido a `main`; ⚠️ confirmar con el docente si `main` es aceptable en lugar de `master` | Git + web de GitHub |
-| v | Video de hasta 6 minutos | ⏳ Pendiente | Otra app (grabación y publicación) |
+| v | Video de hasta 6 minutos | ✅ Subido a carpeta Drive| PPT y Canva |
 
 ### Mediciones de rendimiento
 Para el informe se usan las **mediciones A/B intercaladas** de la sección 2.2: cada
