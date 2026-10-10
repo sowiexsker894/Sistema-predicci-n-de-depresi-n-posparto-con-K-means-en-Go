@@ -219,6 +219,9 @@ Tiempo escritura: 0.03s
 ├── kmeans.pml                       # Modelo Promela del worker pool (Spin)
 ├── VERIFICACION_SPIN.md             # Cómo ejecutar la verificación, qué se verifica y resultados
 ├── spin_evidencia/                  # Salidas de Spin de los 3 casos de verificación
+├── docs/                            # Prompt y informe de GAPs del análisis con IA
+├── CC65-TP-202620_TP.docx           # Informe del trabajo final
+├── CC65-PC2-202620.docx             # Informe de la PC2 (versión anterior)
 └── dataset_1m.csv                   # Entrada de main.go (NO versionado, ver abajo)
 ```
 

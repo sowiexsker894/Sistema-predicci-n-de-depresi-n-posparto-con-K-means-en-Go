@@ -107,9 +107,9 @@ G5 mejora todos los tiempos; el speedup baja solo porque el secuencial mejora m�
 | # | Entregable | Estado | Dónde se hace |
 |---|---|---|---|
 | q | Verificación formal en Spin | ✅ Hecho: modelo, guía y evidencia | Repositorio + WSL |
-| r | Informe de fallas con IA (`.md`) | ⏳ Pendiente | Repositorio + app del modelo de IA |
-| s | Conclusiones y recomendaciones | ⏳ Pendiente (los insumos están en la sección 2) | Repositorio / informe |
-| t | Referencias APA | ⏳ Pendiente | Repositorio / informe |
+| r | Informe de GAPs con IA (`.md`) | ✅ `docs/PROMPT_ANALISIS_IA.md` y `docs/INFORME_GAPS_IA.md` (Claude Opus 5.5, 22 GAPs) | Repositorio |
+| s | Conclusiones y recomendaciones | ✅ Borrador en la sección 10 de `CC65-TP-202620_TP.docx`; ⚠️ adaptarlo con las palabras del equipo | Informe |
+| t | Referencias APA | ✅ Sección 11 del informe (31 referencias, APA 7); ⚠️ verificar las de la PC1 | Informe |
 | u | Código en GitHub con historial | ✅ Subido a `main`; ⚠️ confirmar con el docente si `main` es aceptable en lugar de `master` | Git + web de GitHub |
 | v | Video de hasta 6 minutos | ⏳ Pendiente | Otra app (grabación y publicación) |
 
@@ -134,9 +134,10 @@ controlada; `medicion_final.ps1` permite repetirla (tests, benchmarks y tabla en
 - [x] Worker pool y memoria contigua, con tests y benchmarks
 - [x] Verificación en Spin con evidencia (q)
 - [x] Mediciones de rendimiento (A/B intercaladas; script `medicion_final.ps1` para repetirlas)
-- [ ] Informe de fallas con IA (r)
-- [ ] Conclusiones y recomendaciones propias (s)
-- [ ] Referencias APA 7 verificadas (t)
+- [x] Informe de GAPs con IA (r)
+- [x] Informe Word actualizado: `CC65-TP-202620_TP.docx` (original de la PC2: `CC65-PC2-202620.docx`)
+- [ ] Conclusiones adaptadas con las palabras del equipo (s)
+- [ ] Verificar las referencias de la PC1 (t)
 - [x] Push a GitHub (u)
 - [ ] Confirmar con el docente si `main` es aceptable en lugar de `master` (u)
 - [ ] Video de hasta 6 minutos con ambas integrantes, publicado, con la URL en el informe (v)
