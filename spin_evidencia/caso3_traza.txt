@@ -1,0 +1,111 @@
+ltl termina: <> (masterDone)
+  1:	proc  0 (:init::1) kmeans.pml:124 (state 1)	[((i<3))]
+Starting Worker with pid 1
+  2:	proc  0 (:init::1) kmeans.pml:124 (state 2)	[(run Worker())]
+  3:	proc  0 (:init::1) kmeans.pml:124 (state 3)	[i = (i+1)]
+  4:	proc  0 (:init::1) kmeans.pml:124 (state 1)	[((i<3))]
+Starting Worker with pid 2
+  5:	proc  0 (:init::1) kmeans.pml:124 (state 2)	[(run Worker())]
+  6:	proc  0 (:init::1) kmeans.pml:124 (state 3)	[i = (i+1)]
+  7:	proc  0 (:init::1) kmeans.pml:124 (state 1)	[((i<3))]
+Starting Worker with pid 3
+  8:	proc  0 (:init::1) kmeans.pml:124 (state 2)	[(run Worker())]
+  9:	proc  0 (:init::1) kmeans.pml:124 (state 3)	[i = (i+1)]
+ 10:	proc  0 (:init::1) kmeans.pml:125 (state 4)	[else]
+ 11:	proc  0 (:init::1) kmeans.pml:123 (state 8)	[break]
+Starting Master with pid 4
+ 12:	proc  0 (:init::1) kmeans.pml:127 (state 9)	[(run Master())]
+ 13:	proc  4 (Master:1) kmeans.pml:72 (state 1)	[((iter<2))]
+ 13:	proc  4 (Master:1) kmeans.pml:74 (state 2)	[j = 0]
+ 14:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 15:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 16:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 17:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 18:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 19:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 20:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 21:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 22:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 23:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 24:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 25:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 26:	proc  4 (Master:1) kmeans.pml:77 (state 6)	[else]
+ 27:	proc  4 (Master:1) kmeans.pml:81 (state 11)	[j = 0]
+ 28:	proc  4 (Master:1) kmeans.pml:84 (state 12)	[((j<(4-1)))]
+ 29:	proc  3 (Worker:1) kmeans.pml:51 (state 1)	[jobs?kind,jobIter]
+ 30:	proc  3 (Worker:1) kmeans.pml:54 (state 4)	[((kind==JOB))]
+ 31:	proc  3 (Worker:1) kmeans.pml:56 (state 5)	[assert(!(updating))]
+ 31:	proc  3 (Worker:1) kmeans.pml:56 (state 6)	[readers = (readers+1)]
+ 32:	proc  3 (Worker:1) kmeans.pml:57 (state 8)	[assert((jobIter==centroidsVersion))]
+ 33:	proc  3 (Worker:1) kmeans.pml:58 (state 9)	[readers = (readers-1)]
+ 34:	proc  3 (Worker:1) kmeans.pml:59 (state 10)	[results!jobIter]
+ 35:	proc  4 (Master:1) kmeans.pml:88 (state 13)	[results?resIter]
+ 36:	proc  4 (Master:1) kmeans.pml:89 (state 14)	[assert((resIter==iter))]
+ 36:	proc  4 (Master:1) kmeans.pml:90 (state 15)	[j = (j+1)]
+ 37:	proc  4 (Master:1) kmeans.pml:84 (state 12)	[((j<(4-1)))]
+ 38:	proc  3 (Worker:1) kmeans.pml:51 (state 1)	[jobs?kind,jobIter]
+ 39:	proc  3 (Worker:1) kmeans.pml:54 (state 4)	[((kind==JOB))]
+ 40:	proc  3 (Worker:1) kmeans.pml:56 (state 5)	[assert(!(updating))]
+ 40:	proc  3 (Worker:1) kmeans.pml:56 (state 6)	[readers = (readers+1)]
+ 41:	proc  3 (Worker:1) kmeans.pml:57 (state 8)	[assert((jobIter==centroidsVersion))]
+ 42:	proc  3 (Worker:1) kmeans.pml:58 (state 9)	[readers = (readers-1)]
+ 43:	proc  3 (Worker:1) kmeans.pml:59 (state 10)	[results!jobIter]
+ 44:	proc  4 (Master:1) kmeans.pml:88 (state 13)	[results?resIter]
+ 45:	proc  4 (Master:1) kmeans.pml:89 (state 14)	[assert((resIter==iter))]
+ 45:	proc  4 (Master:1) kmeans.pml:90 (state 15)	[j = (j+1)]
+ 46:	proc  4 (Master:1) kmeans.pml:84 (state 12)	[((j<(4-1)))]
+ 47:	proc  3 (Worker:1) kmeans.pml:51 (state 1)	[jobs?kind,jobIter]
+ 48:	proc  3 (Worker:1) kmeans.pml:54 (state 4)	[((kind==JOB))]
+ 49:	proc  3 (Worker:1) kmeans.pml:56 (state 5)	[assert(!(updating))]
+ 49:	proc  3 (Worker:1) kmeans.pml:56 (state 6)	[readers = (readers+1)]
+ 50:	proc  3 (Worker:1) kmeans.pml:57 (state 8)	[assert((jobIter==centroidsVersion))]
+ 51:	proc  3 (Worker:1) kmeans.pml:58 (state 9)	[readers = (readers-1)]
+ 52:	proc  3 (Worker:1) kmeans.pml:59 (state 10)	[results!jobIter]
+ 53:	proc  4 (Master:1) kmeans.pml:88 (state 13)	[results?resIter]
+ 54:	proc  4 (Master:1) kmeans.pml:89 (state 14)	[assert((resIter==iter))]
+ 54:	proc  4 (Master:1) kmeans.pml:90 (state 15)	[j = (j+1)]
+ 55:	proc  4 (Master:1) kmeans.pml:91 (state 16)	[else]
+ 56:	proc  4 (Master:1) kmeans.pml:95 (state 21)	[updating = 1]
+ 57:	proc  4 (Master:1) kmeans.pml:96 (state 22)	[assert((readers==0))]
+ 58:	proc  4 (Master:1) kmeans.pml:97 (state 23)	[centroidsVersion = (centroidsVersion+1)]
+ 59:	proc  4 (Master:1) kmeans.pml:98 (state 24)	[updating = 0]
+ 60:	proc  4 (Master:1) kmeans.pml:102 (state 25)	[iter = (iter+1)]
+ 61:	proc  4 (Master:1) kmeans.pml:72 (state 1)	[((iter<2))]
+ 61:	proc  4 (Master:1) kmeans.pml:74 (state 2)	[j = 0]
+ 62:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 63:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 64:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 65:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 66:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 67:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 68:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 69:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 70:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 71:	proc  4 (Master:1) kmeans.pml:76 (state 3)	[((j<4))]
+ 72:	proc  3 (Worker:1) kmeans.pml:51 (state 1)	[jobs?kind,jobIter]
+ 73:	proc  3 (Worker:1) kmeans.pml:54 (state 4)	[((kind==JOB))]
+ 74:	proc  4 (Master:1) kmeans.pml:76 (state 4)	[jobs!JOB,iter]
+ 75:	proc  4 (Master:1) kmeans.pml:76 (state 5)	[j = (j+1)]
+ 76:	proc  4 (Master:1) kmeans.pml:77 (state 6)	[else]
+ 77:	proc  4 (Master:1) kmeans.pml:81 (state 11)	[j = 0]
+ 78:	proc  4 (Master:1) kmeans.pml:84 (state 12)	[((j<(4-1)))]
+ 79:	proc  3 (Worker:1) kmeans.pml:56 (state 5)	[assert(!(updating))]
+ 79:	proc  3 (Worker:1) kmeans.pml:56 (state 6)	[readers = (readers+1)]
+spin: kmeans.pml:57, Error: assertion violated
+spin: text of failed assertion: assert((jobIter==centroidsVersion))
+ 80:	proc  3 (Worker:1) kmeans.pml:57 (state 8)	[assert((jobIter==centroidsVersion))]
+spin: trail ends after 80 steps
+#processes: 5
+		queue 1 (jobs): [JOB,1][JOB,1][JOB,1][JOB,1]
+		queue 2 (results): 
+		centroidsVersion = 1
+		readers = 1
+		updating = 0
+		finished = 0
+		masterDone = 0
+ 80:	proc  4 (Master:1) kmeans.pml:88 (state 13)
+ 80:	proc  3 (Worker:1) kmeans.pml:58 (state 9)
+ 80:	proc  2 (Worker:1) kmeans.pml:50 (state 13)
+ 80:	proc  1 (Worker:1) kmeans.pml:50 (state 13)
+ 80:	proc  0 (:init::1) kmeans.pml:129 (state 11) <valid end state>
+5 processes created

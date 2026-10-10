@@ -216,7 +216,9 @@ Tiempo escritura: 0.03s
 ├── go.mod                           # Módulo Go (sin dependencias externas)
 ├── main.go                          # K-means secuencial y concurrente
 ├── main_test.go                     # Tests y benchmarks
-├── kmeans.pml                       # Modelo Promela para verificación en Spin
+├── kmeans.pml                       # Modelo Promela del worker pool (Spin)
+├── VERIFICACION_SPIN.md             # Cómo ejecutar la verificación, qué se verifica y resultados
+├── spin_evidencia/                  # Salidas de Spin de los 3 casos de verificación
 └── dataset_1m.csv                   # Entrada de main.go (NO versionado, ver abajo)
 ```
 
