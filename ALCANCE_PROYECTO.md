@@ -110,15 +110,20 @@ G5 mejora todos los tiempos; el speedup baja solo porque el secuencial mejora m�
 | r | Informe de fallas con IA (`.md`) | ⏳ Pendiente | Repositorio + app del modelo de IA |
 | s | Conclusiones y recomendaciones | ⏳ Pendiente (los insumos están en la sección 2) | Repositorio / informe |
 | t | Referencias APA | ⏳ Pendiente | Repositorio / informe |
-| u | Código en GitHub con historial | ⚠️ Commits listos **sin push**; la rama es `main`, no `master` | Git + web de GitHub |
+| u | Código en GitHub con historial | ✅ Subido a `main`; ⚠️ confirmar con el docente si `main` es aceptable en lugar de `master` | Git + web de GitHub |
 | v | Video de hasta 6 minutos | ⏳ Pendiente | Otra app (grabación y publicación) |
 
+### Mediciones de rendimiento
+Para el informe se usan las **mediciones A/B intercaladas** de la sección 2.2: cada
+versión se midió alternada con la anterior en la misma sesión, así que la comparación es
+justa aunque los tiempos absolutos varíen entre sesiones. No se hizo una medición final
+controlada; `medicion_final.ps1` permite repetirla (tests, benchmarks y tabla en
+`resultados/`) con la laptop conectada, aplicaciones cerradas y modo "Máximo rendimiento".
+
 ### Pendientes técnicos
-- **Medición final controlada** para el informe: laptop conectada a la corriente y fría,
-  aplicaciones cerradas y modo "Máximo rendimiento"; incluir el benchmark de tamaño de bloque.
 - **Notebooks:** recomendaciones de prioridad media y baja de la Fase 2 (M3-M7, B1-B7).
-- **Push a GitHub** antes de la fecha de entrega, y confirmar con el docente si `main` es
-  aceptable en lugar de `master`. Un commit posterior a la entrega resta 10 puntos.
+- Subir los entregables restantes (r, s, t, enlace del video) **antes** de la fecha de
+  entrega: un commit posterior al plazo resta 10 puntos.
 
 ---
 
@@ -128,9 +133,10 @@ G5 mejora todos los tiempos; el speedup baja solo porque el secuencial mejora m�
 - [x] K-means sin el target, K-means++ y niveles de riesgo
 - [x] Worker pool y memoria contigua, con tests y benchmarks
 - [x] Verificación en Spin con evidencia (q)
-- [ ] Medición final controlada
+- [x] Mediciones de rendimiento (A/B intercaladas; script `medicion_final.ps1` para repetirlas)
 - [ ] Informe de fallas con IA (r)
 - [ ] Conclusiones y recomendaciones propias (s)
 - [ ] Referencias APA 7 verificadas (t)
-- [ ] Confirmar `main` frente a `master` y hacer push antes del plazo (u)
+- [x] Push a GitHub (u)
+- [ ] Confirmar con el docente si `main` es aceptable en lugar de `master` (u)
 - [ ] Video de hasta 6 minutos con ambas integrantes, publicado, con la URL en el informe (v)
