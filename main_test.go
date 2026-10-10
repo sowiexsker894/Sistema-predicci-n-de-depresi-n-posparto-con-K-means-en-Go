@@ -45,6 +45,43 @@ func maxCentroidDiff(a, b []Point) float64 {
 	return maxDiff
 }
 
+func TestLoadDatasetFromCSV(t *testing.T) {
+	// CSV pequeño: encabezado, 2 filas válidas y 1 fila con un target inválido (0.3).
+	// Columnas: Age, sad, 8 síntomas, target (11 en total)
+	content := "Age,sad,s1,s2,s3,s4,s5,s6,s7,s8,target\n" +
+		"1,99,2,3,4,5,6,7,8,9,1.0\n" +
+		"10,99,20,30,40,50,60,70,80,90,0.3\n" +
+		"-1,99,-2,-3,-4,-5,-6,-7,-8,-9,0.5\n"
+	path := t.TempDir() + "/test.csv"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dataset, targets, err := loadDatasetFromCSV(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dataset) != 2 || len(targets) != 2 {
+		t.Fatalf("se esperaban 2 filas válidas, se cargaron %d", len(dataset))
+	}
+
+	// La columna 'sad' (99) no debe aparecer en los puntos
+	expected := []Point{
+		{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		{-1, -2, -3, -4, -5, -6, -7, -8, -9},
+	}
+	for i := 0; i < 2; i++ {
+		for d := 0; d < Dimensions; d++ {
+			if dataset[i][d] != expected[i][d] {
+				t.Fatalf("punto %d = %v, se esperaba %v", i, dataset[i], expected[i])
+			}
+		}
+	}
+	if targets[0] != 2 || targets[1] != 1 {
+		t.Errorf("targets = %v, se esperaba [2 1]", targets)
+	}
+}
+
 func TestNearestCentroid(t *testing.T) {
 	centroids := []Point{
 		make(Point, Dimensions), // todo 0

@@ -67,6 +67,11 @@ func copyPoint(p Point) Point {
 
 // Carga optimizada del CSV de 1M de registros sin paquetes de terceros.
 // Devuelve las features para K-means y, por separado, el nivel del target (0, 1, 2).
+//
+// Todos los valores se guardan seguidos en un solo arreglo grande (values) y cada
+// punto es un pedazo de ese arreglo: el punto i es values[i*Dimensions : (i+1)*Dimensions].
+// Así los datos quedan contiguos en memoria y el procesador los lee en orden, lo que
+// aprovecha mejor la caché que tener un millón de arreglos sueltos.
 func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -75,8 +80,9 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 	defer file.Close()
 
 	// Prealocar memoria para 1,000,000 de puntos
-	dataset := make([]Point, 0, 1000000)
+	values := make([]float64, 0, 1000000*Dimensions)
 	targets := make([]int, 0, 1000000)
+	point := make([]float64, Dimensions)           // fila actual mientras se valida
 	reader := bufio.NewReaderSize(file, 1024*1024) // Buffer de 1 MB para lectura veloz
 
 	isHeader := true
@@ -100,7 +106,6 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 			}
 
 			if len(parts) > TargetColumn {
-				point := make(Point, Dimensions)
 				valid := true
 				for i := 0; i < Dimensions; i++ {
 					val, parseErr := strconv.ParseFloat(strings.TrimSpace(parts[featureColumns[i]]), 64)
@@ -117,7 +122,7 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 					valid = false
 				}
 				if valid {
-					dataset = append(dataset, point)
+					values = append(values, point...)
 					targets = append(targets, level)
 				}
 			}
@@ -126,6 +131,15 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 		if err != nil {
 			break
 		}
+	}
+
+	// Armar los puntos recién al final: si se armaran durante la carga, un append que
+	// agranda 'values' lo movería a otra parte de la memoria y los puntos ya armados
+	// quedarían apuntando al arreglo viejo
+	n := len(targets)
+	dataset := make([]Point, n)
+	for i := 0; i < n; i++ {
+		dataset[i] = values[i*Dimensions : (i+1)*Dimensions]
 	}
 
 	return dataset, targets, nil
