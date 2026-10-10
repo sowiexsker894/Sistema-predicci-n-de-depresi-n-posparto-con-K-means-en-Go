@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -66,18 +68,21 @@ func copyPoint(p Point) Point {
 }
 
 // Carga optimizada del CSV de 1M de registros sin paquetes de terceros.
-// Devuelve las features para K-means y, por separado, el nivel del target (0, 1, 2).
+// Devuelve las features para K-means, por separado el nivel del target (0, 1, 2) y
+// cuántas filas se descartaron por tener columnas faltantes o valores inválidos.
 //
 // Todos los valores se guardan seguidos en un solo arreglo grande (values) y cada
 // punto es un pedazo de ese arreglo: el punto i es values[i*Dimensions : (i+1)*Dimensions].
 // Así los datos quedan contiguos en memoria y el procesador los lee en orden, lo que
 // aprovecha mejor la caché que tener un millón de arreglos sueltos.
-func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
+func loadDatasetFromCSV(filePath string) ([]Point, []int, int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	defer file.Close()
+
+	discarded := 0
 
 	// Prealocar memoria para 1,000,000 de puntos
 	values := make([]float64, 0, 1000000*Dimensions)
@@ -105,7 +110,9 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 				}
 			}
 
-			if len(parts) > TargetColumn {
+			if len(parts) <= TargetColumn {
+				discarded++ // faltan columnas
+			} else {
 				valid := true
 				for i := 0; i < Dimensions; i++ {
 					val, parseErr := strconv.ParseFloat(strings.TrimSpace(parts[featureColumns[i]]), 64)
@@ -124,12 +131,19 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 				if valid {
 					values = append(values, point...)
 					targets = append(targets, level)
+				} else {
+					discarded++ // algún valor no es un número o el target es inválido
 				}
 			}
 		}
 
-		if err != nil {
+		// io.EOF significa que se terminó el archivo; cualquier otro error es un
+		// problema de lectura y no se debe devolver un dataset incompleto como si nada
+		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			return nil, nil, 0, err
 		}
 	}
 
@@ -142,7 +156,7 @@ func loadDatasetFromCSV(filePath string) ([]Point, []int, error) {
 		dataset[i] = values[i*Dimensions : (i+1)*Dimensions]
 	}
 
-	return dataset, targets, nil
+	return dataset, targets, discarded, nil
 }
 
 // ==========================================
@@ -236,11 +250,15 @@ func updateCentroids(oldCentroids []Point, sums []Point, counts []int) ([]Point,
 	newCentroids := make([]Point, K)
 	maxShift := 0.0
 	for c := 0; c < K; c++ {
+		if counts[c] == 0 {
+			// Cluster vacío: no tiene puntos para promediar, así que conserva su
+			// centroide anterior (antes quedaba en el origen, todo en 0)
+			newCentroids[c] = copyPoint(oldCentroids[c])
+			continue
+		}
 		newCentroids[c] = make(Point, Dimensions)
-		if counts[c] > 0 {
-			for d := 0; d < Dimensions; d++ {
-				newCentroids[c][d] = sums[c][d] / float64(counts[c])
-			}
+		for d := 0; d < Dimensions; d++ {
+			newCentroids[c][d] = sums[c][d] / float64(counts[c])
 		}
 		shift := distanceSq(oldCentroids[c], newCentroids[c])
 		if shift > maxShift {
@@ -322,6 +340,11 @@ func KMeansConcurrent(dataset []Point, numWorkers int, seed int64) KMeansResult 
 	start := time.Now()
 	result := KMeansResult{}
 	centroids := initialCentroids(dataset, seed)
+
+	// Con 0 trabajadores nadie procesaría la cola y el maestro esperaría para siempre
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
 
 	n := len(dataset)
 	numJobs := (n + ChunkSize - 1) / ChunkSize
@@ -436,14 +459,19 @@ func sortBySeverity(centroids []Point, mins, maxs Point) []Point {
 	return sorted
 }
 
+// Predice el nivel de riesgo de un caso: el del centroide más cercano. Los centroides
+// deben estar ordenados por severidad (sortBySeverity) para que el índice 0 sea Bajo,
+// el 1 Medio y el 2 Alto. El caso debe venir normalizado igual que el dataset.
+func predictRisk(p Point, sortedCentroids []Point) string {
+	return riskLabels[nearestCentroid(p, sortedCentroids)]
+}
+
 // Muestra el perfil de síntomas de cada nivel de riesgo y cuántos registros de cada
 // nivel del target ('Feeling sad', que no se usó en el clustering) cayeron en cada uno.
 // La pureza es la fracción de registros que pertenece al nivel mayoritario de su
 // cluster; se compara con la línea base (la proporción del nivel más frecuente).
-func printRiskLevels(dataset []Point, targets []int, centroids []Point) {
-	mins, maxs := columnRanges(dataset)
-	centroids = sortBySeverity(centroids, mins, maxs)
-
+// Recibe los centroides ya ordenados por severidad.
+func printRiskLevels(dataset []Point, targets []int, centroids []Point, mins, maxs Point) {
 	// Edad en z-score; síntomas en escala original (0 = No, 0.5 = intermedio, 1 = Yes)
 	fmt.Println("Perfil de cada nivel de riesgo (centroides; síntomas en escala 0-1):")
 	fmt.Printf("%-21s %8s %8s %8s\n", "Característica", riskLabels[0], riskLabels[1], riskLabels[2])
@@ -490,15 +518,25 @@ func printRiskLevels(dataset []Point, targets []int, centroids []Point) {
 }
 
 func main() {
-	csvPath := "dataset_1m.csv"
-	fmt.Printf("Cargando dataset clínico desde %s...\n", csvPath)
+	// Ruta del CSV configurable: go run . -csv otro_archivo.csv
+	csvPath := flag.String("csv", "dataset_1m.csv", "ruta del CSV con los datos normalizados")
+	flag.Parse()
+
+	fmt.Printf("Cargando dataset clínico desde %s...\n", *csvPath)
 	t0 := time.Now()
-	dataset, targets, err := loadDatasetFromCSV(csvPath)
+	dataset, targets, discarded, err := loadDatasetFromCSV(*csvPath)
 	if err != nil {
 		fmt.Printf("Error critico al cargar el archivo CSV: %v\n", err)
 		return
 	}
-	fmt.Printf("Carga completada en %v. Total registros: %d | Dimensiones: %d\n\n", time.Since(t0), len(dataset), Dimensions)
+	fmt.Printf("Carga completada en %v. Total registros: %d | Descartados: %d | Dimensiones: %d\n\n",
+		time.Since(t0), len(dataset), discarded, Dimensions)
+
+	// K-means necesita al menos K puntos para elegir los K centroides iniciales
+	if len(dataset) < K {
+		fmt.Printf("Error: se necesitan al menos %d registros válidos y hay %d\n", K, len(dataset))
+		return
+	}
 
 	// Cada semilla de K-means++ puede llevar a una solución distinta: se prueban varias
 	// (con la versión concurrente, que es más rápida) y se elige la de menor inercia
@@ -518,9 +556,19 @@ func main() {
 
 	fmt.Println("Iniciando procesamiento secuencial...")
 	seq := KMeansSequential(dataset, bestSeed)
-	fmt.Printf("Tiempo Secuencial: %v | Iteraciones: %d | Convergió: %v\n\n", seq.Duration, seq.Iterations, seq.Converged)
+	fmt.Printf("Tiempo Secuencial: %v | Iteraciones: %d | Convergió: %v | Inercia: %.0f\n\n",
+		seq.Duration, seq.Iterations, seq.Converged, inertia(dataset, seq.Centroids))
 
-	printRiskLevels(dataset, targets, seq.Centroids)
+	mins, maxs := columnRanges(dataset)
+	riskCentroids := sortBySeverity(seq.Centroids, mins, maxs)
+	printRiskLevels(dataset, targets, riskCentroids, mins, maxs)
+
+	// Ejemplo de predicción: los primeros registros del dataset son casos reales
+	fmt.Println("Ejemplo de predicción con los 5 primeros registros reales:")
+	for i := 0; i < 5; i++ {
+		fmt.Printf("  Registro %d -> riesgo %s\n", i+1, predictRisk(dataset[i], riskCentroids))
+	}
+	fmt.Println()
 
 	fmt.Println("Iniciando procesamiento concurrente (Worker Pools)...")
 	workerCounts := []int{2, 4, 8, 12, 16}

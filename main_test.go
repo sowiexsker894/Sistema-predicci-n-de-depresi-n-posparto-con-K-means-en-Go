@@ -46,23 +46,29 @@ func maxCentroidDiff(a, b []Point) float64 {
 }
 
 func TestLoadDatasetFromCSV(t *testing.T) {
-	// CSV pequeño: encabezado, 2 filas válidas y 1 fila con un target inválido (0.3).
+	// CSV pequeño: encabezado, 2 filas válidas y 3 inválidas (target 0.3, un valor que
+	// no es número y una fila con columnas faltantes).
 	// Columnas: Age, sad, 8 síntomas, target (11 en total)
 	content := "Age,sad,s1,s2,s3,s4,s5,s6,s7,s8,target\n" +
 		"1,99,2,3,4,5,6,7,8,9,1.0\n" +
 		"10,99,20,30,40,50,60,70,80,90,0.3\n" +
+		"10,99,abc,30,40,50,60,70,80,90,1.0\n" +
+		"10,99,20,30\n" +
 		"-1,99,-2,-3,-4,-5,-6,-7,-8,-9,0.5\n"
 	path := t.TempDir() + "/test.csv"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	dataset, targets, err := loadDatasetFromCSV(path)
+	dataset, targets, discarded, err := loadDatasetFromCSV(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(dataset) != 2 || len(targets) != 2 {
 		t.Fatalf("se esperaban 2 filas válidas, se cargaron %d", len(dataset))
+	}
+	if discarded != 3 {
+		t.Errorf("se esperaban 3 filas descartadas, se contaron %d", discarded)
 	}
 
 	// La columna 'sad' (99) no debe aparecer en los puntos
@@ -79,6 +85,67 @@ func TestLoadDatasetFromCSV(t *testing.T) {
 	}
 	if targets[0] != 2 || targets[1] != 1 {
 		t.Errorf("targets = %v, se esperaba [2 1]", targets)
+	}
+}
+
+func TestLoadDatasetMissingFile(t *testing.T) {
+	_, _, _, err := loadDatasetFromCSV(t.TempDir() + "/no_existe.csv")
+	if err == nil {
+		t.Error("se esperaba un error al abrir un archivo que no existe")
+	}
+}
+
+func TestUpdateCentroidsEmptyCluster(t *testing.T) {
+	old := []Point{make(Point, Dimensions), make(Point, Dimensions), make(Point, Dimensions)}
+	sums := []Point{make(Point, Dimensions), make(Point, Dimensions), make(Point, Dimensions)}
+	for d := 0; d < Dimensions; d++ {
+		old[2][d] = 7  // centroide anterior del cluster 2
+		sums[0][d] = 4 // cluster 0: 2 puntos que suman 4 -> promedio 2
+	}
+	counts := []int{2, 0, 0} // los clusters 1 y 2 quedaron vacíos
+
+	updated, _ := updateCentroids(old, sums, counts)
+	if updated[0][0] != 2 {
+		t.Errorf("cluster 0 = %v, se esperaba 2", updated[0][0])
+	}
+	if updated[2][0] != 7 {
+		t.Errorf("un cluster vacío debe conservar su centroide anterior (7), quedó en %v", updated[2][0])
+	}
+}
+
+func TestConcurrentZeroWorkers(t *testing.T) {
+	// No debe quedarse bloqueado: con 0 trabajadores se usa 1
+	dataset := makeTestDataset()
+	seq := KMeansSequential(dataset, DefaultSeed)
+	conc := KMeansConcurrent(dataset, 0, DefaultSeed)
+	if diff := maxCentroidDiff(seq.Centroids, conc.Centroids); diff > 1e-9 {
+		t.Errorf("centroides distintos al secuencial (diferencia %.2e)", diff)
+	}
+}
+
+func TestPredictRisk(t *testing.T) {
+	dataset := makeTestDataset()
+	result := KMeansSequential(dataset, DefaultSeed)
+	mins, maxs := columnRanges(dataset)
+	riskCentroids := sortBySeverity(result.Centroids, mins, maxs)
+
+	// Casos nuevos cerca de 0 (Bajo), 5 (Medio) y 10 (Alto)
+	cases := []struct {
+		value    float64
+		expected string
+	}{
+		{0.2, "Bajo"},
+		{4.8, "Medio"},
+		{9.9, "Alto"},
+	}
+	for _, tc := range cases {
+		p := make(Point, Dimensions)
+		for d := 0; d < Dimensions; d++ {
+			p[d] = tc.value
+		}
+		if got := predictRisk(p, riskCentroids); got != tc.expected {
+			t.Errorf("predictRisk(%v) = %s, se esperaba %s", tc.value, got, tc.expected)
+		}
 	}
 }
 
@@ -225,7 +292,7 @@ func TestConcurrentMatchesSequentialRealData(t *testing.T) {
 	if _, err := os.Stat("dataset_1m.csv"); err != nil {
 		t.Skip("falta dataset_1m.csv (ver README)")
 	}
-	dataset, _, err := loadDatasetFromCSV("dataset_1m.csv")
+	dataset, _, _, err := loadDatasetFromCSV("dataset_1m.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +324,7 @@ func loadBenchDataset(b *testing.B) []Point {
 		if _, err := os.Stat("dataset_1m.csv"); err != nil {
 			b.Skip("falta dataset_1m.csv (ver README)")
 		}
-		dataset, _, err := loadDatasetFromCSV("dataset_1m.csv")
+		dataset, _, _, err := loadDatasetFromCSV("dataset_1m.csv")
 		if err != nil {
 			b.Fatal(err)
 		}

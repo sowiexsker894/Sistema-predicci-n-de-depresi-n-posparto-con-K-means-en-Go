@@ -249,7 +249,8 @@ Requiere Go 1.21 o superior (descarga automáticamente la versión indicada en `
 Con `dataset_1m.csv` en la raíz del proyecto:
 
 ```bash
-go run .
+go run .                      # usa dataset_1m.csv
+go run . -csv otro_archivo.csv  # otra ruta para el CSV
 ```
 
 Usa 9 features (Age + 8 síntomas). `Feeling sad or Tearful` es el target: tanto su
