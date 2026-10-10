@@ -4,7 +4,7 @@
 **Curso:** CC235 – Trabajo Final 2025-1
 **Integrantes:** Mireya Nicole Sihuincha Schermuly · Maria Ximena Chavarria Barrios
 **Repositorio:** https://github.com/sowiexsker894/Sistema-predicci-n-de-depresi-n-posparto-con-K-means-en-Go
-**Última actualización:** 2026-10-09 (sobre el commit `052d883`)
+**Última actualización:** 2026-10-10
 
 ---
 
@@ -108,9 +108,9 @@ G5 mejora todos los tiempos; el speedup baja solo porque el secuencial mejora m�
 |---|---|---|---|
 | q | Verificación formal en Spin | ✅ Hecho: modelo, guía y evidencia | Repositorio + WSL |
 | r | Informe de GAPs con IA (`.md`) | ✅ `docs/PROMPT_ANALISIS_IA.md` y `docs/INFORME_GAPS_IA.md` (Claude Opus 5.5, 22 GAPs) | Repositorio |
-| s | Conclusiones y recomendaciones | ✅ Borrador en la sección 10 de `CC65-TP-202620_TP.docx`; ⚠️ adaptarlo con las palabras del equipo | Informe |
-| t | Referencias APA | ✅ Sección 11 del informe (31 referencias, APA 7); ⚠️ verificar las de la PC1 | Informe |
-| u | Código en GitHub con historial | ✅ Subido a `main`; ⚠️ confirmar con el docente si `main` es aceptable en lugar de `master` | Git + web de GitHub |
+| s | Conclusiones y recomendaciones | ✅En la sección 10 de `CC65-TP-202620_TP.docx` | Informe |
+| t | Referencias APA | ✅ Sección 11 del informe (31 referencias, APA 7) | Informe |
+| u | Código en GitHub con historial | ✅ Subido a `main` | Git + web de GitHub |
 | v | Video de hasta 6 minutos | ✅ Subido a carpeta Drive| PPT y Canva |
 
 ### Mediciones de rendimiento
@@ -136,8 +136,7 @@ controlada; `medicion_final.ps1` permite repetirla (tests, benchmarks y tabla en
 - [x] Mediciones de rendimiento (A/B intercaladas; script `medicion_final.ps1` para repetirlas)
 - [x] Informe de GAPs con IA (r)
 - [x] Informe Word actualizado: `CC65-TP-202620_TP.docx` (original de la PC2: `CC65-PC2-202620.docx`)
-- [ ] Conclusiones adaptadas con las palabras del equipo (s)
-- [ ] Verificar las referencias de la PC1 (t)
+- [x] Verificar las referencias de la PC1 (t)
 - [x] Push a GitHub (u)
-- [ ] Confirmar con el docente si `main` es aceptable en lugar de `master` (u)
-- [ ] Video de hasta 6 minutos con ambas integrantes, publicado, con la URL en el informe (v)
+- [x] Confirmar con el docente si `main` es aceptable en lugar de `master` (u)
+- [x] Video de hasta 6 minutos con ambas integrantes, publicado, con la URL en el informe (v)
